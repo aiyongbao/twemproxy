@@ -254,12 +254,16 @@ server_failure(struct context *ctx, struct server *server)
     struct server_pool *pool = server->owner;
     int64_t now, next;
     rstatus_t status;
+    int do_update;
 
     if (!pool->auto_eject_hosts) {
         return;
     }
 
+    do_update = (server->fail == 1) ? 0 : 1;
+
     server->failure_count++;
+    add_failed_server(ctx, server);
 
     log_debug(LOG_VERB, "server '%.*s' failure count %"PRIu32" limit %"PRIu32,
               server->pname.len, server->pname.data, server->failure_count,
@@ -274,21 +278,22 @@ server_failure(struct context *ctx, struct server *server)
         return;
     }
     next = now + pool->server_retry_timeout;
-
-    log_debug(LOG_INFO, "update pool %"PRIu32" '%.*s' to delete server '%.*s' "
-              "for next %"PRIu32" secs", pool->idx, pool->name.len,
-              pool->name.data, server->pname.len, server->pname.data,
-              pool->server_retry_timeout / 1000 / 1000);
-
-    stats_pool_incr(ctx, pool, server_ejects);
-
-    server->failure_count = 0;
     server->next_retry = next;
 
-    status = server_pool_run(pool);
-    if (status != NC_OK) {
-        log_error("updating pool %"PRIu32" '%.*s' failed: %s", pool->idx,
-                  pool->name.len, pool->name.data, strerror(errno));
+    if (do_update) {
+        log_debug(LOG_INFO, "update pool %"PRIu32" '%.*s' to delete server '%.*s' "
+                "for next %"PRIu32" secs", pool->idx, pool->name.len,
+                pool->name.data, server->pname.len, server->pname.data,
+                pool->server_retry_timeout / 1000 / 1000);
+
+        stats_pool_incr(ctx, pool, server_ejects);
+        server->failure_count = 0;
+
+        status = server_pool_run(pool);
+        if (status != NC_OK) {
+            log_error("updating pool %"PRIu32" '%.*s' failed: %s", pool->idx,
+                    pool->name.len, pool->name.data, strerror(errno));
+        }
     }
 }
 
@@ -839,3 +844,64 @@ server_pool_deinit(struct array *server_pool)
 
     log_debug(LOG_DEBUG, "deinit %"PRIu32" pools", npool);
 }
+
+void
+server_restore(struct conn *conn)
+{
+    rstatus_t status;
+    struct server *server;
+    struct server_pool *pool;
+    
+    server = (struct server *)(conn->owner);
+    if (server == NULL) {
+        log_error("Server is null: sd:(%d), client:(%d), redis:(%d)", 
+                  conn->sd, conn->client, conn->redis);
+    }
+
+    if (server->fail == 0) {
+        return;
+    }
+
+    server->fail = 0;
+    pool = (struct server_pool *)(server->owner);
+    status = server_pool_run(pool);
+    if (status != NC_OK) {
+        log_error("updating pool %"PRIu32" '%.*s' failed: %s", pool->idx,
+                pool->name.len, pool->name.data, strerror(errno));
+    }
+}
+
+rstatus_t
+server_reconnect(struct context *ctx, struct server *server)
+{
+    rstatus_t status;
+    struct conn *conn;
+
+    conn = server_conn(server);
+    if (conn == NULL) {
+        //log error
+        return NC_ERROR;
+    }
+
+    status = server_connect(ctx, server, conn);
+    if (status == NC_OK) {
+        if (conn->connected == 1) {
+            conn->restore(conn);
+        }
+    } else {
+        server_close(ctx, conn);
+    }
+
+    return status;
+}
+
+void
+add_failed_server(struct context *ctx, struct server *server)
+{
+    struct server **pserver;
+
+    server->fail = 1;
+    pserver = (struct server **)array_push(ctx->fails);
+    *pserver = server;
+}
+

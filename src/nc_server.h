@@ -83,6 +83,7 @@ struct server {
 
     int64_t            next_retry;    /* next retry time in usec */
     uint32_t           failure_count; /* # consecutive failures */
+    unsigned           fail:1;        /* failed server */
 };
 
 struct server_pool {
@@ -138,5 +139,8 @@ rstatus_t server_pool_preconnect(struct context *ctx);
 void server_pool_disconnect(struct context *ctx);
 rstatus_t server_pool_init(struct array *server_pool, struct array *conf_pool, struct context *ctx);
 void server_pool_deinit(struct array *server_pool);
+void server_restore(struct conn *conn);
+rstatus_t server_reconnect(struct context *ctx, struct server *server);
+void add_failed_server(struct context *ctx, struct server *server);
 
 #endif
