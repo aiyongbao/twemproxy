@@ -260,7 +260,7 @@ server_failure(struct context *ctx, struct server *server)
         return;
     }
 
-    do_update = (server->fail == 1) ? 0 : 1;
+    do_update = (server->fail == FAIL_STATUS_NORMAL) ? 1 : 0;
 
     server->failure_count++;
     add_failed_server(ctx, server);
@@ -845,30 +845,93 @@ server_pool_deinit(struct array *server_pool)
     log_debug(LOG_DEBUG, "deinit %"PRIu32" pools", npool);
 }
 
-void
-server_restore(struct conn *conn)
+static struct msg *
+heartbeat_msg_get(struct conn *conn)
 {
-    rstatus_t status;
-    struct server *server;
+    struct msg *msg;
+
+    ASSERT(conn->client && !conn->proxy);
+
+    msg = msg_get(conn, true, conn->redis);
+    if (msg == NULL) {
+        conn->err = errno;
+    } 
+
+    return msg;
+}
+
+static uint32_t
+set_heartbeat_command(struct mbuf *mbuf, int redis)
+{
+#define HEARTBEAT_MEMCACHE_COMMAND "get twemproxy\r\n"
+#define HEARTBEAT_REDIS_COMMAND "*2\r\n$3\r\nget\r\n$9\r\ntwemproxy\r\n"
+    char *command;
+    uint32_t n;
+
+    command = redis ? HEARTBEAT_REDIS_COMMAND : HEARTBEAT_MEMCACHE_COMMAND;
+    n = (uint32_t)strlen(command);
+
+    memcpy(mbuf->last, command, n);
+    ASSERT((mbuf->last + n) <= mbuf->end);
+
+    return n;
+}
+
+static rstatus_t
+send_heartbeat(struct context *ctx, struct conn *conn, struct server *server)
+{
+    struct mbuf *mbuf;
+    uint32_t n;
+    struct msg *msg;
     struct server_pool *pool;
-    
-    server = (struct server *)(conn->owner);
-    if (server == NULL) {
-        log_error("Server is null: sd:(%d), client:(%d), redis:(%d)", 
-                  conn->sd, conn->client, conn->redis);
+    struct conn *c_conn;
+
+    pool = (struct server_pool *)(server->owner);
+
+    c_conn = conn_get(pool, true, conn->redis);
+    if (c_conn == NULL) {
+        return NC_ERROR;
     }
 
-    if (server->fail == 0) {
+    msg = heartbeat_msg_get(c_conn);
+    if (msg != NULL) {
+        c_conn->rmsg = msg;
+    }
+
+    mbuf = STAILQ_LAST(&msg->mhdr, mbuf, next);
+    if (mbuf == NULL || mbuf_full(mbuf)) {
+        mbuf = mbuf_get();
+        if (mbuf == NULL) {
+            return NC_ERROR;
+        }
+        mbuf_insert(&msg->mhdr, mbuf);
+        msg->pos = mbuf->pos;
+    }
+    ASSERT(mbuf->end - mbuf->last > 0);
+
+    n = set_heartbeat_command(mbuf, conn->redis); 
+    mbuf->last += n;
+    msg->mlen += (uint32_t)n;
+
+    msg->swallow = 1;
+    server->fail = FAIL_STATUS_ERR_TRY_HEARTBEAT;
+
+    return event_add_out_with_conn(ctx, conn, msg);
+}
+
+void
+server_restore(struct context *ctx, struct conn *conn)
+{
+    struct server *server;
+    
+    server = (struct server *)(conn->owner);
+    ASSERT(server != NULL);
+
+    if (server->fail == FAIL_STATUS_NORMAL) {
         return;
     }
 
-    server->fail = 0;
-    pool = (struct server_pool *)(server->owner);
-    status = server_pool_run(pool);
-    if (status != NC_OK) {
-        log_error("updating pool %"PRIu32" '%.*s' failed: %s", pool->idx,
-                pool->name.len, pool->name.data, strerror(errno));
-    }
+    send_heartbeat(ctx, conn, server);
 }
 
 rstatus_t
@@ -885,8 +948,8 @@ server_reconnect(struct context *ctx, struct server *server)
 
     status = server_connect(ctx, server, conn);
     if (status == NC_OK) {
-        if (conn->connected == 1) {
-            conn->restore(conn);
+        if (conn->connected) {
+            conn->restore(ctx, conn);
         }
     } else {
         server_close(ctx, conn);
@@ -900,8 +963,30 @@ add_failed_server(struct context *ctx, struct server *server)
 {
     struct server **pserver;
 
-    server->fail = 1;
+    server->fail = FAIL_STATUS_ERR_TRY_CONNECT;
     pserver = (struct server **)array_push(ctx->fails);
     *pserver = server;
 }
 
+void
+server_restore_from_heartbeat(struct server *server, struct conn *conn)
+{
+    struct server_pool *pool;
+    rstatus_t status;
+
+    conn->unref(conn);
+    conn_put(conn);
+    pool = (struct server_pool *)server->owner;
+    server->fail = FAIL_STATUS_NORMAL;
+
+    status = server_pool_run(pool);
+    if (status == NC_OK) {
+        log_debug(LOG_NOTICE, "updating pool %"PRIu32" '%.*s'," 
+                  "restored server '%.*s'", pool->idx,
+                  pool->name.len, pool->name.data, 
+                  server->name.len, server->name.data);
+    } else {
+        log_error("updating pool %"PRIu32" '%.*s' failed: %s", pool->idx,
+                pool->name.len, pool->name.data, strerror(errno));
+    }
+}

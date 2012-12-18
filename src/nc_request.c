@@ -429,6 +429,23 @@ req_forward_stats(struct context *ctx, struct server *server, struct msg *msg)
     stats_server_incr_by(ctx, server, request_bytes, msg->mlen);
 }
 
+rstatus_t 
+event_add_out_with_conn(struct context *ctx, struct conn *conn, struct msg *msg)
+{
+    rstatus_t status;
+
+    if (TAILQ_EMPTY(&conn->imsg_q)) {
+        status = event_add_out(ctx->ep, conn);
+        if (status != NC_OK) {
+            return status;
+        }
+    }
+    conn->enqueue_inq(ctx, conn, msg);
+
+    req_forward_stats(ctx, conn->owner, msg);
+    return NC_OK;
+}
+
 static void
 req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
 {
@@ -452,20 +469,15 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg)
         req_forward_error(ctx, c_conn, msg);
         return;
     }
+
     ASSERT(!s_conn->client && !s_conn->proxy);
 
-    /* enqueue the message (request) into server inq */
-    if (TAILQ_EMPTY(&s_conn->imsg_q)) {
-        status = event_add_out(ctx->ep, s_conn);
-        if (status != NC_OK) {
-            req_forward_error(ctx, c_conn, msg);
-            s_conn->err = errno;
-            return;
-        }
+    status = event_add_out_with_conn(ctx, s_conn, msg);
+    if (status != NC_OK) {
+        req_forward_error(ctx, c_conn, msg);
+        s_conn->err = errno;
+        return;
     }
-    s_conn->enqueue_inq(ctx, s_conn, msg);
-
-    req_forward_stats(ctx, s_conn->owner, msg);
 
     log_debug(LOG_VERB, "forward from c %d to s %d req %"PRIu64" len %"PRIu32
               " type %d with key '%.*s'", c_conn->sd, s_conn->sd, msg->id,
@@ -541,7 +553,7 @@ req_send_done(struct context *ctx, struct conn *conn, struct msg *msg)
     ASSERT(!conn->client && !conn->proxy);
     ASSERT(msg != NULL && conn->smsg == NULL);
     ASSERT(msg->request && !msg->done);
-    ASSERT(msg->owner != conn);
+//    ASSERT(msg->owner != conn);
 
     log_debug(LOG_VVERB, "send done req %"PRIu64" len %"PRIu32" type %d on "
               "s %d", msg->id, msg->mlen, msg->type, conn->sd);

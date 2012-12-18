@@ -35,7 +35,7 @@ typedef void (*conn_ref_t)(struct conn *, void *);
 typedef void (*conn_unref_t)(struct conn *);
 
 typedef void (*conn_msgq_t)(struct context *, struct conn *, struct msg *);
-typedef void (*conn_restore_t)(struct conn *);
+typedef void (*conn_restore_t)(struct context *, struct conn *);
 
 struct conn {
     TAILQ_ENTRY(conn)  conn_tqe;      /* link in server_pool / server / free q */
@@ -97,5 +97,7 @@ ssize_t conn_recv(struct conn *conn, void *buf, size_t size);
 ssize_t conn_sendv(struct conn *conn, struct array *sendv, size_t nsend);
 void conn_init(void);
 void conn_deinit(void);
+
+rstatus_t event_add_out_with_conn(struct context *ctx, struct conn *conn, struct msg *msg);
 
 #endif

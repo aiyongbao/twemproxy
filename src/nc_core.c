@@ -29,7 +29,7 @@
 static uint32_t ctx_id; /* context generation */
 
 static void
-failed_servers_init(struct context *ctx)
+core_failed_servers_init(struct context *ctx)
 {
     int i;
 
@@ -39,7 +39,7 @@ failed_servers_init(struct context *ctx)
 }
 
 static void
-failed_servers_deinit(struct context *ctx)
+core_failed_servers_deinit(struct context *ctx)
 {
     uint32_t i, n, nsize;
     
@@ -92,7 +92,7 @@ core_ctx_create(struct instance *nci)
     }
 
     /* initialize fails_servers */
-    failed_servers_init(ctx);
+    core_failed_servers_init(ctx);
 
     /* create stats per server pool */
     ctx->stats = stats_create(nci->stats_port, nci->stats_addr, nci->stats_interval,
@@ -149,7 +149,7 @@ core_ctx_destroy(struct context *ctx)
     log_debug(LOG_VVERB, "destroy ctx %p id %"PRIu32"", ctx, ctx->id);
     proxy_deinit(ctx);
     server_pool_disconnect(ctx);
-    failed_servers_deinit(ctx);
+    core_failed_servers_deinit(ctx);
     event_deinit(ctx);
     stats_destroy(ctx->stats);
     server_pool_deinit(&ctx->pool);
@@ -271,6 +271,7 @@ retry_connection(struct context *ctx)
     struct server *server;
     int64_t now;
     uint32_t i, nsize;
+    rstatus_t status;
 
     servers = ctx->fails;
     idx = (ctx->failed_idx == 0) ? 1 : 0;
@@ -287,7 +288,8 @@ retry_connection(struct context *ctx)
     for (i = 0; i < nsize; i++) {
         server = *(struct server **)array_pop(servers);
         if (server->next_retry == 0 || server->next_retry < now) {
-            if (server_reconnect(ctx, server) != NC_OK) {
+            status = server_reconnect(ctx, server);
+            if (status != NC_OK) {
                 add_failed_server(ctx, server);
             }
         } else {
@@ -358,7 +360,7 @@ core_core(struct context *ctx, struct conn *conn, uint32_t events)
         return;
     }
 
-    conn->restore(conn);
+    conn->restore(ctx, conn);
 
     /* read takes precedence over write */
     if (events & (EPOLLIN | EPOLLHUP)) {

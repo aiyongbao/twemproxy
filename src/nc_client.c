@@ -189,7 +189,6 @@ client_close(struct context *ctx, struct conn *conn)
 }
 
 void
-client_restore(struct conn *conn)
+client_restore(struct context *ctx, struct conn *conn)
 {
-    /* Do nothting */
 }

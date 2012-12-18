@@ -563,7 +563,7 @@ msg_repair(struct context *ctx, struct conn *conn, struct msg *msg)
     return NC_OK;
 }
 
-static rstatus_t
+rstatus_t
 msg_parse(struct context *ctx, struct conn *conn, struct msg *msg)
 {
     rstatus_t status;

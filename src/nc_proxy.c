@@ -359,6 +359,6 @@ proxy_recv(struct context *ctx, struct conn *conn)
 }
 
 void
-proxy_restore(struct conn *conn)
+proxy_restore(struct context *ctx, struct conn *conn)
 {
 }

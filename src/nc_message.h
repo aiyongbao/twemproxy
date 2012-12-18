@@ -238,4 +238,7 @@ void rsp_recv_done(struct context *ctx, struct conn *conn, struct msg *msg, stru
 struct msg *rsp_send_next(struct context *ctx, struct conn *conn);
 void rsp_send_done(struct context *ctx, struct conn *conn, struct msg *msg);
 
+rstatus_t msg_parse(struct context *ctx, struct conn *conn, struct msg *msg);
+
+
 #endif

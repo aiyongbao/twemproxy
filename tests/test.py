@@ -6,7 +6,6 @@ import redis
 
 r = 1
 n = 100
-w = 15
 
 if( len(sys.argv) > 1 ):
     r = int(sys.argv[1])
