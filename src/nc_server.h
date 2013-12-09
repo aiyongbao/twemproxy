@@ -76,11 +76,13 @@ struct server {
 
     struct string      pname;         /* name:port:weight (ref in conf_server) */
     struct string      name;          /* name (ref in conf_server) */
+    struct string      address;       /* name:port (ref in conf_server) */
     uint16_t           port;          /* port */
     uint32_t           weight;        /* weight */
     int                family;        /* socket family */
     socklen_t          addrlen;       /* socket length */
     struct sockaddr    *addr;         /* socket address (ref in conf_server) */
+    struct sockinfo    info;          /* connect socket info */
 
     uint32_t           ns_conn_q;     /* # server connection */
     struct conn_tqh    s_conn_q;      /* server connection q */
@@ -124,6 +126,7 @@ struct server_pool {
     unsigned           auto_eject_hosts:1;   /* auto_eject_hosts? */
     unsigned           preconnect:1;         /* preconnect? */
     unsigned           redis:1;              /* redis? */
+    unsigned           always_resolve_host:1;/* always_resolve_host? */
 };
 
 void server_ref(struct conn *conn, void *owner);

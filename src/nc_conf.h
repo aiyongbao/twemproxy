@@ -47,6 +47,7 @@
 #define CONF_DEFAULT_LISTEN_BACKLOG          512
 #define CONF_DEFAULT_CLIENT_CONNECTIONS      0
 #define CONF_DEFAULT_REDIS                   false
+#define CONF_DEFAULT_ALWAYS_RESOLVE_HOST     false
 #define CONF_DEFAULT_PRECONNECT              false
 #define CONF_DEFAULT_AUTO_EJECT_HOSTS        false
 #define CONF_DEFAULT_SERVER_RETRY_TIMEOUT    30 * 1000      /* in msec */
@@ -65,6 +66,7 @@ struct conf_listen {
 struct conf_server {
     struct string   pname;      /* server: as "name:port:weight" */
     struct string   name;       /* name */
+    struct string   address;    /* address */
     int             port;       /* port */
     int             weight;     /* weight */
     struct sockinfo info;       /* connect socket info */
@@ -81,6 +83,7 @@ struct conf_pool {
     int                backlog;               /* backlog: */
     int                client_connections;    /* client_connections: */
     int                redis;                 /* redis: */
+    int                always_resolve_host;   /* always_resolve_host: */
     int                preconnect;            /* preconnect: */
     int                auto_eject_hosts;      /* auto_eject_hosts: */
     int                server_connections;    /* server_connections: */

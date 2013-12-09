@@ -290,12 +290,13 @@ server_failure(struct context *ctx, struct server *server)
 
     server->failure_count = 0;
 
+    add_failed_server(ctx, server);
+
     status = server_pool_run(pool);
     if (status != NC_OK) {
         log_error("updating pool %"PRIu32" '%.*s' failed: %s", pool->idx,
                   pool->name.len, pool->name.data, strerror(errno));
     }
-    add_failed_server(ctx, server);
 }
 
 static void
@@ -456,6 +457,17 @@ server_connect(struct context *ctx, struct server *server, struct conn *conn)
 
     log_debug(LOG_VVERB, "connect to server '%.*s'", server->pname.len,
               server->pname.data);
+
+    struct server_pool *pool = server->owner;
+    if (pool->always_resolve_host) {
+        nc_resolve(&(server->address), server->port, &(server->info));
+        server->addr = (struct sockaddr *)&(server->info.addr);
+        conn->addr = server->addr;
+        struct in_addr inaddr = ((struct sockaddr_in *)(server->addr))->sin_addr;
+        unsigned char *ptr = (char *)(&inaddr);
+        log_debug(LOG_NOTICE, "resolve ip: %u.%u.%u.%u", 
+            ptr[0], ptr[1], ptr[2], ptr[3]);
+    }
 
     conn->sd = socket(conn->family, SOCK_STREAM, 0);
     if (conn->sd < 0) {
