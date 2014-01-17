@@ -168,19 +168,24 @@ rsp_filter(struct context *ctx, struct conn *conn, struct msg *msg)
     ASSERT(pmsg->request && !pmsg->done);
 
     if (pmsg->swallow) {
-        if (server->fail == FAIL_STATUS_ERR_TRY_HEARTBEAT) {
-            struct conn *c_conn;
-
-            c_conn = pmsg->owner; 
-            server_restore_from_heartbeat(server, c_conn);
-        }
-
         conn->dequeue_outq(ctx, conn, pmsg);
         pmsg->done = 1;
 
         log_debug(LOG_INFO, "swallow rsp %"PRIu64" len %"PRIu32" of req "
                   "%"PRIu64" on s %d", msg->id, msg->mlen, pmsg->id,
                   conn->sd);
+
+        msg_type_t type = msg->type;
+        if (server->fail == FAIL_STATUS_ERR_TRY_HEARTBEAT) {
+            if (type != MSG_RSP_REDIS_ERROR) {
+                struct conn *c_conn;
+
+                c_conn = pmsg->owner; 
+                server_restore_from_heartbeat(server, c_conn);
+            } else {
+                send_heartbeat(ctx, conn, server);
+            }
+        }
 
         rsp_put(msg);
         req_put(pmsg);
