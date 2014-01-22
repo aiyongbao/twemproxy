@@ -247,7 +247,7 @@ server_each_disconnect(void *elem, void *data)
     return NC_OK;
 }
 
-static void
+void
 server_failure(struct context *ctx, struct server *server)
 {
     struct server_pool *pool = server->owner;

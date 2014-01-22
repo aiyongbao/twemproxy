@@ -210,6 +210,7 @@ rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *msg)
     rstatus_t status;
     struct msg *pmsg;
     struct conn *c_conn;
+    int failure = 0;
 
     ASSERT(!s_conn->client && !s_conn->proxy);
 
@@ -238,9 +239,23 @@ rsp_forward(struct context *ctx, struct conn *s_conn, struct msg *msg)
         if (status != NC_OK) {
             c_conn->err = errno;
         }
+
+        if (msg->type == MSG_RSP_REDIS_ERROR) {
+            struct mbuf *mbuf;
+            mbuf = STAILQ_LAST(&msg->mhdr, mbuf, next);
+
+#define REDIS_LOADING_TEXT      "-LOADING"
+            if (memcmp(mbuf->start, REDIS_LOADING_TEXT, 
+                       strlen(REDIS_LOADING_TEXT)) == 0) {
+                failure = 1; 
+            }
+        }
     }
 
     rsp_forward_stats(ctx, s_conn->owner, msg);
+    if (failure == 1) {
+        server_close(ctx, s_conn);
+    }
 }
 
 void
