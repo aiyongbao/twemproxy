@@ -437,6 +437,7 @@ redis_parse_req(struct msg *r)
                 if (r->rnarg == 0) {
                     goto error;
                 }
+
                 r->narg = r->rnarg;
                 r->narg_end = p;
                 r->token = NULL;
