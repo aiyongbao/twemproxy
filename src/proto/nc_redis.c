@@ -1935,6 +1935,11 @@ redis_parse_rsp(struct msg *r)
 
                     break;
                 }
+
+                if (ch == CR) {
+                    p -= 1;
+                }
+
                 state = SW_RUNTO_CRLF;
             }
 
